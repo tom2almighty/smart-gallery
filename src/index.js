@@ -15,7 +15,7 @@ class SmartGallery {
             
             // Justified options
             targetRowHeight: 300,
-            lastRowBehavior: 'hide', // 'justify', 'no-justify', 'hide'
+            lastRowBehavior: 'left', // 'left', 'center', 'right', 'fill', 'hide'
             
             // Masonry / Grid options
             columnWidth: 300, 
@@ -340,17 +340,35 @@ class SmartGallery {
                 finalRowHeight = (containerWidth - totalGap) / finalAspect;
 
                 // Handle last row specific behavior
+                let offsetX = 0;
+                
                 if (isLastRow) {
-                     if (lastRowBehavior === 'hide') {
-                         // Don't add boxes
+                     const behavior = lastRowBehavior;
+                     
+                     if (behavior === 'hide') {
                          break;
-                     } else if (lastRowBehavior === 'no-justify') {
+                     } 
+                     
+                     if (behavior === 'left' || behavior === 'center' || behavior === 'right') {
+                         // Reset height to target
                          finalRowHeight = targetRowHeight;
+                         
+                         // Calculate used width to find offset
+                         // Width = (AspectRatio * Height) ... sum of all
+                         const usedWidth = finalAspect * finalRowHeight + totalGap;
+                         const remainingSpace = containerWidth - usedWidth;
+                         
+                         if (behavior === 'center') {
+                             offsetX = Math.max(0, remainingSpace / 2);
+                         } else if (behavior === 'right') {
+                             offsetX = Math.max(0, remainingSpace);
+                         }
                      }
+                     // 'fill' or 'justify' does nothing (keeps stretched height)
                 }
                 
                 // Create boxes
-                let left = 0;
+                let left = offsetX;
                 for (let k = i; k <= bestBreakIndex; k++) {
                     const w = finalRowHeight * aspectRatios[k];
                     boxes.push({
@@ -470,18 +488,5 @@ class SmartGallery {
     }
 }
 
-// Universal Module Definition (UMD)
-(function (root, factory) {
-    if (typeof define === 'function' && define.amd) {
-        // AMD
-        define([], factory);
-    } else if (typeof module === 'object' && module.exports) {
-        // Node / CommonJS
-        module.exports = factory();
-    } else {
-        // Browser globals (root is window)
-        root.SmartGallery = factory();
-    }
-}(typeof self !== 'undefined' ? self : this, function () {
-    return SmartGallery;
-}));
+// Export as default for ESM
+export default SmartGallery;

@@ -8,12 +8,35 @@ A lightweight, dependency-free JavaScript library for creating beautiful gallery
 - **Lightbox Ready**: Easy integration with PhotoSwipe, FancyBox, etc.
 - **Responsive**: Automatically updates on window resize.
 
-## Usage
+## Installation
 
-### 1. Include Script
+### 1. ES Module (Recommended)
+```bash
+npm install smart-gallery
+# or
+pnpm add smart-gallery
+```
+
+```javascript
+import SmartGallery from 'smart-gallery';
+```
+
+### 2. Browser Script (UMD)
 ```html
 <script src="dist/smart-gallery.min.js"></script>
+<!-- SmartGallery is available as a global variable -->
 ```
+
+### 3. CDN
+```html
+<!-- jsDelivr -->
+<script src="https://cdn.jsdelivr.net/npm/smart-gallery/dist/smart-gallery.min.js"></script>
+
+<!-- unpkg -->
+<script src="https://unpkg.com/smart-gallery/dist/smart-gallery.min.js"></script>
+```
+
+## Quick Start
 
 ### 2. HTML Structure
 ```html
@@ -51,7 +74,7 @@ gallery.render();
 | `className` | String | `''` | Custom class name added to container |
 | `itemClassName` | String | `'sg-item'` | Custom class name added to each item |
 | `targetRowHeight` | Number | `300` | (Justified only) Target height of rows |
-| `lastRowBehavior` | String | `'hide'` | (Justified only) `'justify'` (stretch), `'no-justify'` (left align), `'hide'` |
+| `lastRowBehavior` | String | `'left'` | (Justified only) `'left'`, `'center'`, `'right'`, `'fill'` (stretch), `'hide'` |
 | `columnWidth` | Number | `300` | (Masonry/Grid only) Width of columns |
 | `columns` | Number/String | `'auto'` | (Masonry/Grid only) Fixed number of columns or `'auto'` |
 | `virtualize` | Boolean | `true` | Enable virtual scrolling (render only visible items) |
@@ -73,5 +96,7 @@ const gallery = new SmartGallery('#gallery', {
 ## Build
 To build the minified version:
 ```bash
-node build.js
+npm run build
+# or
+pnpm run build
 ```
