@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartGallery Demo with PhotoSwipe</title>
+    
+    <!-- PhotoSwipe CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.4.2/photoswipe.min.css">
+    
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background: #f5f5f7; margin: 0; }
+        .controls { 
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(255,255,255,0.9); backdrop-filter: blur(10px);
+            padding: 15px 20px; 
+            border-bottom: 1px solid #ddd;
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; 
+        }
+        h1 { margin: 0 20px 0 0; font-size: 1.2rem; }
+        button { 
+            padding: 8px 16px; cursor: pointer; border: 1px solid #ccc; background: #fff; 
+            border-radius: 6px; transition: all 0.2s; font-size: 0.9rem;
+        }
+        button:hover { background: #f0f0f0; border-color: #bbb; }
+        button.active { background: #007bff; color: white; border-color: #007bff; }
+        
+        #gallery { 
+            width: 100%; 
+            max-width: 1600px;
+            margin: 20px auto;
+            position: relative;
+        }
+        
+        .sg-item {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            overflow: hidden;
+            border-radius: 4px;
+            background: #eee;
+            cursor: zoom-in;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .sg-item:hover img {
+            transform: scale(1.03);
+        }
+        
+        .sg-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+            display: block;
+        }
+
+        /* Loading state */
+        .loading::after {
+            content: "Loading...";
+            position: absolute; top: 50%; left: 50%; width: 100%; text-align: center;
+            transform: translate(-50%, -50%); color: #888;
+        }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <h1>SmartGallery</h1>
+    <button onclick="changeLayout('justified')" id="btn-justified" class="active">Justified</button>
+    <button onclick="changeLayout('masonry')" id="btn-masonry">Masonry</button>
+    <button onclick="changeLayout('grid')" id="btn-grid">Grid</button>
+    <div style="width:1px; height:20px; background:#ddd; margin:0 10px;"></div>
+    
+    <div id="controls-justified" style="display:flex; align-items:center; gap:10px;">
+        <label>Row Height: <span id="val-row-height">250</span>px</label>
+        <input type="range" min="100" max="600" value="250" oninput="updateRowHeight(this.value)">
+    </div>
+
+    <div id="controls-cols" style="display:none; align-items:center; gap:10px;">
+        <label>Col Width: <span id="val-col-width">300</span>px</label>
+        <input type="range" min="100" max="600" value="300" oninput="updateColWidth(this.value)">
+    </div>
+
+    <div style="width:1px; height:20px; background:#ddd; margin:0 10px;"></div>
+
+    <div style="display:flex; align-items:center; gap:10px;">
+        <label>Gap: <span id="val-gap">12</span>px</label>
+        <input type="range" min="0" max="50" value="12" oninput="updateGap(this.value)">
+    </div>
+
+    <div style="width:1px; height:20px; background:#ddd; margin:0 10px;"></div>
+    <button onclick="addMoreItems()">+ Add Images</button>
+</div>
+
+<div id="gallery"></div>
+
+<!-- PhotoSwipe JS should be loaded as module usually, but UMD is easier for simple demo -->
+<script type="module">
+    import PhotoSwipeLightbox from 'https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.4.2/photoswipe-lightbox.esm.min.js';
+    import PhotoSwipe from 'https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.4.2/photoswipe.esm.min.js';
+
+    // Our Library
+    // Assuming SmartGallery is loaded globally via script tag logic below, OR we can import if converted to ESM.
+    // Since we used UMD in the file, we can load it via script tag.
+</script>
+
+<script src="src/smart-gallery.js"></script>
+
+<script type="module">
+    import PhotoSwipeLightbox from 'https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.4.2/photoswipe-lightbox.esm.min.js';
+    import PhotoSwipe from 'https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.4.2/photoswipe.esm.min.js';
+
+    const imageFiles = [
+        'assets/images/01.avif',
+        'assets/images/02.avif',
+        'assets/images/03.avif',
+        'assets/images/04.avif',
+        'assets/images/05.avif',
+        'assets/images/06.avif',
+        'assets/images/07.avif',
+        'assets/images/08.avif'
+    ];
+
+    let gallery;
+    let allItemsCoords = []; // To keep track for lightboxes if needed, but SmartGallery has state.
+
+    // Helper for random placeholder colors
+    function getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color + '33'; // Add transparency
+    }
+
+    // 1. Prepare Data
+    // We need width/height for layout. 
+    function loadImages(urls) {
+        return Promise.all(urls.map(url => new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => resolve({
+                src: url,
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+                // Add high-res data for lightbox (using same image for demo)
+                originalSrc: url,
+                originalWidth: img.naturalWidth,
+                originalHeight: img.naturalHeight
+            });
+            img.onerror = () => resolve({ src: url, width: 800, height: 600 }); // fallback
+            img.src = url;
+        })));
+    }
+
+    async function init() {
+        const items = await loadImages(imageFiles);
+        // Triple the items for better demo -> Make it HUGE for virtualization test
+        // 8 images * 100 = 800 items
+        let initialItems = [];
+        for(let i=0; i<50; i++) {
+            initialItems = initialItems.concat(items.map(item => ({...item})));
+        }
+        initialItems = initialItems.map((item, i) => ({...item, id: i, placeholderColor: getRandomColor() }));
+
+        // 2. Initialize Gallery
+        gallery = new SmartGallery('#gallery', {
+            layout: 'justified',
+            gap: 12,
+            targetRowHeight: 250,
+            columnWidth: 320,
+            virtualize: true, // Enable Virtualization
+            
+            // OPTION A: Handle click manually (Best for programmatic lightboxes like PhotoSwipe v5)
+            onItemClick: (payload) => {
+                const { index } = payload;
+                openPhotoSwipe(index);
+            },
+            
+            // OPTION B: renderItem (Best for declarative lightboxes that scan DOM)
+            // renderItem: (item) => { ... return customized DOM ... }
+        });
+
+        gallery.addItems(initialItems);
+        gallery.render();
+    }
+
+    // 3. Integrate PhotoSwipe
+    function openPhotoSwipe(index) {
+        const items = gallery.items.map(item => ({
+            src: item.originalSrc || item.src,
+            width: item.originalWidth || item.width,
+            height: item.originalHeight || item.height
+        }));
+
+        const lightbox = new PhotoSwipeLightbox({
+            dataSource: items,
+            pswpModule: PhotoSwipe
+        });
+        
+        lightbox.init();
+        lightbox.loadAndOpen(index); 
+    }
+
+    // Controls
+    window.changeLayout = (type) => {
+        if (!gallery) return;
+        gallery.options.layout = type;
+        
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        document.getElementById(`btn-${type}`).classList.add('active');
+        
+        // Toggle controls
+        const isJustified = type === 'justified';
+        document.getElementById('controls-justified').style.display = isJustified ? 'flex' : 'none';
+        document.getElementById('controls-cols').style.display = isJustified ? 'none' : 'flex';
+
+        gallery.render();
+    };
+
+    window.updateRowHeight = (val) => {
+        document.getElementById('val-row-height').textContent = val;
+        gallery.options.targetRowHeight = parseInt(val);
+        gallery.render();
+    };
+
+    window.updateColWidth = (val) => {
+        document.getElementById('val-col-width').textContent = val;
+        gallery.options.columnWidth = parseInt(val);
+        gallery.render();
+    };
+
+    window.updateGap = (val) => {
+        document.getElementById('val-gap').textContent = val;
+        gallery.options.gap = parseInt(val);
+        gallery.render();
+    };
+
+    window.addMoreItems = async () => {
+        // Mock adding more
+        const items = await loadImages(imageFiles);
+        const newItems = items.map(item => ({...item, id: Date.now()}));
+        gallery.addItems(newItems);
+        gallery.render();
+    };
+
+    init();
+</script>
+</body>
+</html>
