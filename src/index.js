@@ -350,18 +350,19 @@ class SmartGallery {
                      } 
                      
                      if (behavior === 'left' || behavior === 'center' || behavior === 'right') {
-                         // Reset height to target
-                         finalRowHeight = targetRowHeight;
+                         // Keep a target-like height, but never allow total row width to exceed container.
+                         const maxRowHeightToFit = (containerWidth - totalGap) / finalAspect;
+                         finalRowHeight = Math.min(targetRowHeight, maxRowHeightToFit);
                          
                          // Calculate used width to find offset
                          // Width = (AspectRatio * Height) ... sum of all
                          const usedWidth = finalAspect * finalRowHeight + totalGap;
-                         const remainingSpace = containerWidth - usedWidth;
+                         const remainingSpace = Math.max(0, containerWidth - usedWidth);
                          
                          if (behavior === 'center') {
-                             offsetX = Math.max(0, remainingSpace / 2);
+                             offsetX = remainingSpace / 2;
                          } else if (behavior === 'right') {
-                             offsetX = Math.max(0, remainingSpace);
+                             offsetX = remainingSpace;
                          }
                      }
                      // 'fill' or 'justify' does nothing (keeps stretched height)
