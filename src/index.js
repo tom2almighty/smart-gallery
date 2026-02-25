@@ -252,25 +252,10 @@ class SmartGallery {
         const { targetRowHeight, gap, lastRowBehavior } = options;
         const boxes = [];
         let top = 0;
+        const minRowHeight = targetRowHeight * 0.5;
         
         // Convert items to aspect ratios
         const aspectRatios = items.map(item => item.aspectRatio);
-
-        // Helper: Calculate cost of a break point
-        // Cost = Math.pow(Math.abs(actualRowHeight - targetRowHeight), 2)
-        // Or ratio difference cost.
-        function calculateRow(startIndex, endIndex) {
-            const rowItems = [];
-            let totalAspect = 0;
-            for (let i = startIndex; i <= endIndex; i++) {
-                totalAspect += aspectRatios[i];
-            }
-            const count = endIndex - startIndex + 1;
-            const totalGap = (count - 1) * gap;
-            const availableWidth = containerWidth - totalGap;
-            const rowHeight = availableWidth / totalAspect;
-            return { rowHeight, score: Math.pow(Math.abs(rowHeight - targetRowHeight), 2) };
-        }
 
         // Dynamic Programming approach or Greedy with Lookahead?
         // True optimal is O(N^2) or O(N) with constraints. 
@@ -291,9 +276,9 @@ class SmartGallery {
         
         let i = 0;
         while (i < items.length) {
-            let rowItems = [];
             let currentAspect = 0;
             let bestBreakIndex = -1;
+            let bestAspect = 0;
             let minScore = Infinity;
             
             // Try adding items one by one
@@ -307,7 +292,7 @@ class SmartGallery {
                 
                 // Score = deviation from target height
                 // If rowHeight becomes too small (e.g. < 0.5 * target), stop looking further (it will only get smaller)
-                if (rowHeight < targetRowHeight * 0.5) break;
+                if (rowHeight < minRowHeight) break;
 
                 const score = Math.abs(rowHeight - targetRowHeight);
                 
@@ -315,6 +300,7 @@ class SmartGallery {
                 if (score < minScore) {
                     minScore = score;
                     bestBreakIndex = j;
+                    bestAspect = currentAspect;
                 }
                 
                 // Optimization: if rowHeight is already smaller than target, adding more will make it smaller (worse usually, unless we want small rows)
@@ -332,10 +318,7 @@ class SmartGallery {
                 // Recalculate final metrics for this row
                 let finalRowHeight = 0;
                 let finalRowItemsCount = bestBreakIndex - i + 1;
-                let finalAspect = 0;
-                 for (let k = i; k <= bestBreakIndex; k++) {
-                     finalAspect += aspectRatios[k];
-                 }
+                const finalAspect = bestAspect;
                 const totalGap = (finalRowItemsCount - 1) * gap;
                 finalRowHeight = (containerWidth - totalGap) / finalAspect;
 
@@ -386,11 +369,12 @@ class SmartGallery {
             } else {
                 // Should not happen if at least one item fits?
                 // Force at least one item
-                const w = targetRowHeight * aspectRatios[i]; // Just fallback
+                const fallbackHeight = Math.min(targetRowHeight, containerWidth / aspectRatios[i]);
+                const w = fallbackHeight * aspectRatios[i];
                  boxes.push({
-                        left: 0, top: top, width: w, height: targetRowHeight
+                        left: 0, top: top, width: w, height: fallbackHeight
                 });
-                top += targetRowHeight + gap;
+                top += fallbackHeight + gap;
                 i++;
             }
         }
@@ -398,35 +382,45 @@ class SmartGallery {
         return { boxes, containerHeight: top };
     }
 
-    /**
-     * Masonry Layout Algorithm (Pinterest-style)
-     */
-    _computeMasonryLayout(items, containerWidth, options) {
+    _getColumnMetrics(containerWidth, options) {
         const { gap, columnWidth, columns } = options;
-        
         let colCount = 0;
         let colW = 0;
 
         if (columns === 'auto') {
             colW = columnWidth;
             colCount = Math.floor((containerWidth + gap) / (colW + gap));
-            // Ensure at least 1 column
             colCount = Math.max(1, colCount);
-             colW = (containerWidth - (colCount - 1) * gap) / colCount;
+            colW = (containerWidth - (colCount - 1) * gap) / colCount;
         } else {
             colCount = columns;
             colW = (containerWidth - (colCount - 1) * gap) / colCount;
         }
 
+        return { gap, colCount, colW };
+    }
+
+    /**
+     * Masonry Layout Algorithm (Pinterest-style)
+     */
+    _computeMasonryLayout(items, containerWidth, options) {
+        const { gap, colCount, colW } = this._getColumnMetrics(containerWidth, options);
+
         const colHeights = new Array(colCount).fill(0);
         const boxes = [];
 
-        items.forEach(item => {
+        for (let i = 0; i < items.length; i++) {
             // Find shortest column
-            const minH = Math.min(...colHeights);
-            const colIndex = colHeights.indexOf(minH);
+            let colIndex = 0;
+            let minH = colHeights[0];
+            for (let c = 1; c < colCount; c++) {
+                if (colHeights[c] < minH) {
+                    minH = colHeights[c];
+                    colIndex = c;
+                }
+            }
 
-            const h = colW / item.aspectRatio;
+            const h = colW / items[i].aspectRatio;
             
             boxes.push({
                 left: colIndex * (colW + gap),
@@ -436,34 +430,29 @@ class SmartGallery {
             });
 
             colHeights[colIndex] += h + gap;
-        });
+        }
 
-        return { boxes, containerHeight: Math.max(...colHeights) };
+        let containerHeight = colHeights[0];
+        for (let c = 1; c < colCount; c++) {
+            if (colHeights[c] > containerHeight) {
+                containerHeight = colHeights[c];
+            }
+        }
+
+        return { boxes, containerHeight };
     }
 
     /**
      * Grid Layout Algorithm (Fixed grid)
      */
     _computeGridLayout(items, containerWidth, options) {
-         const { gap, columnWidth, columns } = options;
-          let colCount = 0;
-        let colW = 0;
-
-        if (columns === 'auto') {
-            colW = columnWidth;
-            colCount = Math.floor((containerWidth + gap) / (colW + gap));
-            colCount = Math.max(1, colCount);
-            colW = (containerWidth - (colCount - 1) * gap) / colCount;
-        } else {
-             colCount = columns;
-            colW = (containerWidth - (colCount - 1) * gap) / colCount;
-        }
+        const { gap, colCount, colW } = this._getColumnMetrics(containerWidth, options);
         
         // Assume square grid for stability
         const itemH = colW; 
 
         const boxes = [];
-        items.forEach((item, i) => {
+        for (let i = 0; i < items.length; i++) {
             const colIndex = i % colCount;
             const rowIndex = Math.floor(i / colCount);
 
@@ -473,7 +462,7 @@ class SmartGallery {
                 width: colW,
                 height: itemH
             });
-        });
+        }
 
         const rows = Math.ceil(items.length / colCount);
         return { boxes, containerHeight: rows * (itemH + gap) - gap }; // remove last gap
