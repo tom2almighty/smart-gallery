@@ -38,10 +38,18 @@ class SmartGallery {
         this.items = [];
         this.geometry = []; // Calculated layout positions {left, top, width, height, itemIndex}
         this.renderedIndices = new Set(); // Track rendered items for virtualization
-        
+        this.mountedItemElements = new Map();
+        this.topSortedGeometryIndices = [];
+        this.topSortedStarts = [];
+        this.maxGeometryHeight = 0;
+        this.currentVisibleStartPos = -1;
+        this.currentVisibleEndPos = -1;
+
         this.resizeObserver = null;
         this.scrollHandler = null;
+        this.scrollContainer = window;
         this.isResizing = false;
+        this.lastObservedWidth = this.container.clientWidth;
 
         this._init();
     }
@@ -57,6 +65,9 @@ class SmartGallery {
         let resizeTimeout;
         this.resizeObserver = new ResizeObserver(() => {
             if (this.isResizing) return;
+            const currentWidth = this.container.clientWidth;
+            if (Math.abs(currentWidth - this.lastObservedWidth) < 1) return;
+            this.lastObservedWidth = currentWidth;
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
                 this.render();
@@ -66,24 +77,42 @@ class SmartGallery {
 
         // Scroll handler for virtualization
         if (this.options.virtualize) {
+            this.scrollContainer = this._getScrollParent(this.container);
             this.scrollHandler = this._throttle(this._handleScroll.bind(this), 50);
-            window.addEventListener('scroll', this.scrollHandler, { passive: true });
-            // Also listen to container scroll if it's scrollable? Usually gallery is in body scroll.
-            // Assuming window scroll for now. If container is scrollable, user should manage or we detect overflow style.
+            this.scrollContainer.addEventListener('scroll', this.scrollHandler, { passive: true });
         }
     }
 
+    _getScrollParent(el) {
+        let parent = el.parentElement;
+        while (parent) {
+            const style = window.getComputedStyle(parent);
+            const overflowY = style.overflowY;
+            const isScrollable = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+            if (isScrollable && parent.scrollHeight > parent.clientHeight) {
+                return parent;
+            }
+            parent = parent.parentElement;
+        }
+        return window;
+    }
+
     addItems(items) {
-        // Normalize items: calculate aspectRatio if not provided
+        // Normalize items: calculate aspectRatio if not provided or invalid
         const newItems = items.map(item => {
-            let aspectRatio = item.aspectRatio;
-            if (!aspectRatio && item.width && item.height) {
-                aspectRatio = item.width / item.height;
+            let aspectRatio = Number(item.aspectRatio);
+            if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+                const width = Number(item.width);
+                const height = Number(item.height);
+                if (Number.isFinite(width) && Number.isFinite(height) && height > 0) {
+                    aspectRatio = width / height;
+                }
             }
-            // Default to square if no info provided to avoid crash
-            if (!aspectRatio) {
-                aspectRatio = 1; 
+
+            if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+                aspectRatio = 1;
             }
+
             return { ...item, aspectRatio };
         });
         this.items = [...this.items, ...newItems];
@@ -93,103 +122,211 @@ class SmartGallery {
         if (!this.container || this.items.length === 0) return;
         this.isResizing = true;
 
-        const containerWidth = this.container.clientWidth;
-        const { layout } = this.options;
-        let containerHeight = 0;
+        try {
+            const containerWidth = this.container.clientWidth;
+            this.lastObservedWidth = containerWidth;
+            const { layout } = this.options;
+            let containerHeight = 0;
 
-        // Clean up everything for full re-render
-        this.renderedIndices.clear();
-        this.container.innerHTML = '';
-        this.geometry = []; // Clear geometry
+            // Clean up everything for full re-render
+            this.renderedIndices.clear();
+            this.mountedItemElements.clear();
+            this.topSortedGeometryIndices = [];
+            this.topSortedStarts = [];
+            this.maxGeometryHeight = 0;
+            this.currentVisibleStartPos = -1;
+            this.currentVisibleEndPos = -1;
+            this.container.innerHTML = '';
+            this.geometry = []; // Clear geometry
 
-        let result;
-        if (layout === 'justified') {
-           result = this._computeJustifiedLayout(this.items, containerWidth, this.options);
-        } else if (layout === 'masonry') {
-           result = this._computeMasonryLayout(this.items, containerWidth, this.options);
-        } else if (layout === 'grid') {
-           result = this._computeGridLayout(this.items, containerWidth, this.options);
+            let result;
+            if (layout === 'justified') {
+                result = this._computeJustifiedLayout(this.items, containerWidth, this.options);
+            } else if (layout === 'masonry') {
+                result = this._computeMasonryLayout(this.items, containerWidth, this.options);
+            } else if (layout === 'grid') {
+                result = this._computeGridLayout(this.items, containerWidth, this.options);
+            }
+
+            this.geometry = result.boxes.map((box, i) => ({ ...box, itemIndex: i })); // Store index
+            containerHeight = result.containerHeight;
+            this._buildVisibleIndex();
+
+            this.container.style.height = `${containerHeight}px`;
+
+            // Initial render of visible items
+            this._updateVisibleItems();
+        } finally {
+            this.isResizing = false;
+        }
+    }
+
+    _buildVisibleIndex() {
+        const sorted = this.geometry
+            .map((box, idx) => ({ idx, top: box.top }))
+            .sort((a, b) => a.top - b.top);
+
+        this.topSortedGeometryIndices = new Array(sorted.length);
+        this.topSortedStarts = new Array(sorted.length);
+
+        let maxHeight = 0;
+        for (let i = 0; i < sorted.length; i++) {
+            const item = sorted[i];
+            this.topSortedGeometryIndices[i] = item.idx;
+            this.topSortedStarts[i] = item.top;
+            const h = this.geometry[item.idx].height;
+            if (h > maxHeight) maxHeight = h;
+        }
+        this.maxGeometryHeight = maxHeight;
+    }
+
+    _lowerBound(arr, target) {
+        let left = 0;
+        let right = arr.length;
+
+        while (left < right) {
+            const mid = (left + right) >> 1;
+            if (arr[mid] < target) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
         }
 
-        this.geometry = result.boxes.map((box, i) => ({ ...box, itemIndex: i })); // Store index
-        containerHeight = result.containerHeight;
-        
-        this.container.style.height = `${containerHeight}px`;
-        
-        // Initial render of visible items
-        this._updateVisibleItems();
+        return left;
+    }
 
-        this.isResizing = false;
+    _mountRangeByPos(startPos, endPos) {
+        if (startPos < 0 || endPos < 0 || endPos < startPos) return;
+        const fragment = document.createDocumentFragment();
+
+        for (let pos = startPos; pos <= endPos; pos++) {
+            const geometryIndex = this.topSortedGeometryIndices[pos];
+            const itemIndex = this.geometry[geometryIndex].itemIndex;
+            if (!this.renderedIndices.has(itemIndex)) {
+                this._mountItem(this.geometry[geometryIndex], fragment);
+                this.renderedIndices.add(itemIndex);
+            }
+        }
+
+        this.container.appendChild(fragment);
+    }
+
+    _unmountRangeByPos(startPos, endPos) {
+        if (startPos < 0 || endPos < 0 || endPos < startPos) return;
+
+        for (let pos = startPos; pos <= endPos; pos++) {
+            const geometryIndex = this.topSortedGeometryIndices[pos];
+            const itemIndex = this.geometry[geometryIndex].itemIndex;
+            if (this.renderedIndices.has(itemIndex)) {
+                this._unmountItem(itemIndex);
+                this.renderedIndices.delete(itemIndex);
+            }
+        }
     }
 
     _updateVisibleItems() {
         if (!this.options.virtualize) {
-            // Render all
-            this._renderItems(this.geometry);
+            // Render all with batched mount
+            const fragment = document.createDocumentFragment();
+            for (let i = 0; i < this.geometry.length; i++) {
+                const box = this.geometry[i];
+                const index = box.itemIndex;
+                if (!this.renderedIndices.has(index)) {
+                    this._mountItem(box, fragment);
+                    this.renderedIndices.add(index);
+                }
+            }
+            this.container.appendChild(fragment);
             return;
         }
 
-        const scrollTop = window.scrollY;
-        const viewportHeight = window.innerHeight;
         const buffer = this.options.buffer;
-        
-        // Get container position relative to document
-        const rect = this.container.getBoundingClientRect();
-        const containerTop = rect.top + scrollTop;
-        
+        let scrollTop = 0;
+        let viewportHeight = 0;
+        let containerTop = 0;
+
+        if (this.scrollContainer === window) {
+            scrollTop = window.scrollY;
+            viewportHeight = window.innerHeight;
+            const rect = this.container.getBoundingClientRect();
+            containerTop = rect.top + scrollTop;
+        } else {
+            scrollTop = this.scrollContainer.scrollTop;
+            viewportHeight = this.scrollContainer.clientHeight;
+            const containerRect = this.container.getBoundingClientRect();
+            const scrollRect = this.scrollContainer.getBoundingClientRect();
+            containerTop = containerRect.top - scrollRect.top + scrollTop;
+        }
+
         // Calculate visible range relative to container
         const startY = Math.max(0, scrollTop - containerTop - buffer);
         const endY = scrollTop - containerTop + viewportHeight + buffer;
 
-        // Find items in range
-        // Since geometry is sorted by top (mostly), we can optimize search.
-        // For now, simple filter.
-        const indicesToRender = new Set();
-        
-        this.geometry.forEach((box) => {
-             if (box.top + box.height > startY && box.top < endY) {
-                 indicesToRender.add(box.itemIndex);
-             }
-        });
+        let nextStart = -1;
+        let nextEnd = -1;
 
-        // Diff: Add new items
-        indicesToRender.forEach(index => {
-            if (!this.renderedIndices.has(index)) {
-                this._mountItem(this.geometry[index]);
-                this.renderedIndices.add(index);
-            }
-        });
+        if (this.topSortedGeometryIndices.length > 0) {
+            const safeStart = Math.max(0, startY - this.maxGeometryHeight);
+            let cursor = this._lowerBound(this.topSortedStarts, safeStart);
 
-        // Diff: Remove old items
-        this.renderedIndices.forEach(index => {
-            if (!indicesToRender.has(index)) {
-                this._unmountItem(index);
-                this.renderedIndices.delete(index);
+            while (cursor < this.topSortedGeometryIndices.length) {
+                const geometryIndex = this.topSortedGeometryIndices[cursor];
+                const box = this.geometry[geometryIndex];
+                if (box.top >= endY) break;
+                if (box.top + box.height > startY) {
+                    if (nextStart === -1) nextStart = cursor;
+                    nextEnd = cursor;
+                }
+                cursor++;
             }
-        });
+        }
+
+        const prevStart = this.currentVisibleStartPos;
+        const prevEnd = this.currentVisibleEndPos;
+
+        if (nextStart === -1) {
+            this._unmountRangeByPos(prevStart, prevEnd);
+        } else if (prevStart === -1) {
+            this._mountRangeByPos(nextStart, nextEnd);
+        } else {
+            if (nextStart < prevStart) {
+                this._mountRangeByPos(nextStart, Math.min(prevStart - 1, nextEnd));
+            }
+            if (nextEnd > prevEnd) {
+                this._mountRangeByPos(Math.max(prevEnd + 1, nextStart), nextEnd);
+            }
+            if (prevStart < nextStart) {
+                this._unmountRangeByPos(prevStart, Math.min(nextStart - 1, prevEnd));
+            }
+            if (prevEnd > nextEnd) {
+                this._unmountRangeByPos(Math.max(nextEnd + 1, prevStart), prevEnd);
+            }
+        }
+
+        this.currentVisibleStartPos = nextStart;
+        this.currentVisibleEndPos = nextEnd;
     }
 
-    _mountItem(box) {
+    _mountItem(box, parentNode = this.container) {
         const index = box.itemIndex;
         const itemData = this.items[index];
         const div = document.createElement('div');
         div.className = this.options.itemClassName;
-        div.id = `sg-item-${index}`; // For easy finding
+        div.id = `sg-item-${index}`; // Keep id convention for compatibility/debugging
         div.style.position = 'absolute';
         div.style.left = `${box.left}px`;
         div.style.top = `${box.top}px`;
         div.style.width = `${box.width}px`;
         div.style.height = `${box.height}px`;
-        // Optimization: Use transform for better performance? Left/Top is fine for static layout.
-        
+
         // Render content
         if (this.options.renderItem) {
             div.appendChild(this.options.renderItem(itemData, index));
         } else {
             // Default render with placeholder support
-            // Placeholder background
             div.style.backgroundColor = itemData.placeholderColor || this.options.placeholderColor;
-            
+
             const img = document.createElement('img');
             img.src = itemData.src;
             img.style.width = '100%';
@@ -199,14 +336,14 @@ class SmartGallery {
             img.style.opacity = '0'; // Start invisible
             img.style.transition = 'opacity 0.3s';
             img.loading = 'lazy'; // Native lazy load
-            
+
             img.onload = () => {
                 img.style.opacity = '1';
             };
-            
+
             div.appendChild(img);
         }
-        
+
         // Click event
         div.addEventListener('click', (event) => {
             if (this.options.onItemClick) {
@@ -214,14 +351,15 @@ class SmartGallery {
             }
         });
 
-        this.container.appendChild(div);
+        parentNode.appendChild(div);
+        this.mountedItemElements.set(index, div);
     }
 
     _unmountItem(index) {
-        const el = this.container.querySelector(`#sg-item-${index}`);
+        const el = this.mountedItemElements.get(index);
         if (el) {
             el.remove(); // Removes from DOM
-            // Cleanup event listeners if needed? Browser handles modern GC well for elements.
+            this.mountedItemElements.delete(index);
         }
     }
     
@@ -244,6 +382,16 @@ class SmartGallery {
         }
     }
 
+    _applyPixelAlignment(boxes) {
+        for (let i = 0; i < boxes.length; i++) {
+            const box = boxes[i];
+            box.left = Math.round(box.left);
+            box.top = Math.round(box.top);
+            box.width = Math.max(1, Math.round(box.width));
+            box.height = Math.max(1, Math.round(box.height));
+        }
+    }
+
     /**
      * Enhanced Justified Layout Algorithm (Knuth-Plass simplified)
      * Reduces jaggedness by looking ahead at next rows.
@@ -253,9 +401,23 @@ class SmartGallery {
         const boxes = [];
         let top = 0;
         const minRowHeight = targetRowHeight * 0.5;
-        
+
         // Convert items to aspect ratios
         const aspectRatios = items.map(item => item.aspectRatio);
+        const rowHeightCache = new Map();
+
+        const getRowHeight = (from, to, aspectSum) => {
+            const count = to - from + 1;
+            const cacheKey = `${from}-${to}`;
+            let cached = rowHeightCache.get(cacheKey);
+            if (cached !== undefined) return cached;
+
+            const totalGap = (count - 1) * gap;
+            const availableWidth = containerWidth - totalGap;
+            cached = availableWidth / aspectSum;
+            rowHeightCache.set(cacheKey, cached);
+            return cached;
+        };
 
         // Dynamic Programming approach or Greedy with Lookahead?
         // True optimal is O(N^2) or O(N) with constraints. 
@@ -285,10 +447,7 @@ class SmartGallery {
             let j = i;
             while (j < items.length) {
                 currentAspect += aspectRatios[j];
-                const count = j - i + 1;
-                const totalGap = (count - 1) * gap;
-                const availableWidth = containerWidth - totalGap;
-                const rowHeight = availableWidth / currentAspect;
+                const rowHeight = getRowHeight(i, j, currentAspect);
                 
                 // Score = deviation from target height
                 // If rowHeight becomes too small (e.g. < 0.5 * target), stop looking further (it will only get smaller)
@@ -320,7 +479,7 @@ class SmartGallery {
                 let finalRowItemsCount = bestBreakIndex - i + 1;
                 const finalAspect = bestAspect;
                 const totalGap = (finalRowItemsCount - 1) * gap;
-                finalRowHeight = (containerWidth - totalGap) / finalAspect;
+                finalRowHeight = getRowHeight(i, bestBreakIndex, finalAspect);
 
                 // Handle last row specific behavior
                 let offsetX = 0;
@@ -379,7 +538,8 @@ class SmartGallery {
             }
         }
 
-        return { boxes, containerHeight: top };
+        this._applyPixelAlignment(boxes);
+        return { boxes, containerHeight: Math.max(0, boxes.length > 0 ? top - gap : 0) };
     }
 
     _getColumnMetrics(containerWidth, options) {
@@ -400,28 +560,69 @@ class SmartGallery {
         return { gap, colCount, colW };
     }
 
+    _heapLess(a, b) {
+        if (a.height !== b.height) return a.height < b.height;
+        return a.colIndex < b.colIndex;
+    }
+
+    _heapPush(heap, node) {
+        heap.push(node);
+        let i = heap.length - 1;
+
+        while (i > 0) {
+            const parent = (i - 1) >> 1;
+            if (!this._heapLess(heap[i], heap[parent])) break;
+            [heap[i], heap[parent]] = [heap[parent], heap[i]];
+            i = parent;
+        }
+    }
+
+    _heapPop(heap) {
+        if (heap.length === 1) return heap.pop();
+        const root = heap[0];
+        heap[0] = heap.pop();
+
+        let i = 0;
+        while (true) {
+            const left = i * 2 + 1;
+            const right = left + 1;
+            let smallest = i;
+
+            if (left < heap.length && this._heapLess(heap[left], heap[smallest])) {
+                smallest = left;
+            }
+            if (right < heap.length && this._heapLess(heap[right], heap[smallest])) {
+                smallest = right;
+            }
+            if (smallest === i) break;
+
+            [heap[i], heap[smallest]] = [heap[smallest], heap[i]];
+            i = smallest;
+        }
+
+        return root;
+    }
+
     /**
      * Masonry Layout Algorithm (Pinterest-style)
      */
     _computeMasonryLayout(items, containerWidth, options) {
         const { gap, colCount, colW } = this._getColumnMetrics(containerWidth, options);
 
-        const colHeights = new Array(colCount).fill(0);
         const boxes = [];
+        const heap = [];
+        for (let c = 0; c < colCount; c++) {
+            this._heapPush(heap, { colIndex: c, height: 0 });
+        }
+
+        let maxHeight = 0;
 
         for (let i = 0; i < items.length; i++) {
-            // Find shortest column
-            let colIndex = 0;
-            let minH = colHeights[0];
-            for (let c = 1; c < colCount; c++) {
-                if (colHeights[c] < minH) {
-                    minH = colHeights[c];
-                    colIndex = c;
-                }
-            }
-
+            const minCol = this._heapPop(heap);
+            const colIndex = minCol.colIndex;
+            const minH = minCol.height;
             const h = colW / items[i].aspectRatio;
-            
+
             boxes.push({
                 left: colIndex * (colW + gap),
                 top: minH,
@@ -429,17 +630,13 @@ class SmartGallery {
                 height: h
             });
 
-            colHeights[colIndex] += h + gap;
+            const nextHeight = minH + h + gap;
+            if (nextHeight > maxHeight) maxHeight = nextHeight;
+            this._heapPush(heap, { colIndex, height: nextHeight });
         }
 
-        let containerHeight = colHeights[0];
-        for (let c = 1; c < colCount; c++) {
-            if (colHeights[c] > containerHeight) {
-                containerHeight = colHeights[c];
-            }
-        }
-
-        return { boxes, containerHeight };
+        this._applyPixelAlignment(boxes);
+        return { boxes, containerHeight: Math.max(0, boxes.length > 0 ? maxHeight - gap : 0) };
     }
 
     /**
@@ -465,6 +662,7 @@ class SmartGallery {
         }
 
         const rows = Math.ceil(items.length / colCount);
+        this._applyPixelAlignment(boxes);
         return { boxes, containerHeight: rows * (itemH + gap) - gap }; // remove last gap
     }
 
@@ -472,8 +670,8 @@ class SmartGallery {
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
         }
-        if (this.scrollHandler) {
-            window.removeEventListener('scroll', this.scrollHandler);
+        if (this.scrollHandler && this.scrollContainer) {
+            this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
         }
     }
 }

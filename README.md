@@ -6,7 +6,7 @@ A lightweight, dependency-free JavaScript library for creating beautiful gallery
 - **3 Layout Modes**: Justified (Flickr-style), Masonry (Pinterest-style), and Grid.
 - **Lightweight**: No external dependencies.
 - **Lightbox Ready**: Easy integration with PhotoSwipe, FancyBox, etc.
-- **Responsive**: Automatically updates on window resize.
+- **Responsive**: Automatically updates when container width changes.
 
 ## Installation
 
@@ -52,8 +52,9 @@ const gallery = new SmartGallery('#my-gallery', {
 });
 
 // Add items
-// Note: You must provide either `width` and `height`, OR `aspectRatio`.
+// Note: You should provide either `width` and `height`, OR `aspectRatio`.
 // This allows the library to calculate layout before images load (preventing layout shift).
+// If `aspectRatio` is invalid, SmartGallery will fallback to `width/height`, then finally `1`.
 gallery.addItems([
     { src: 'image1.jpg', width: 800, height: 600 },
     { src: 'image2.jpg', width: 1024, height: 768 },
@@ -78,6 +79,7 @@ gallery.render();
 | `columnWidth` | Number | `300` | (Masonry/Grid only) Width of columns |
 | `columns` | Number/String | `'auto'` | (Masonry/Grid only) Fixed number of columns or `'auto'` |
 | `virtualize` | Boolean | `true` | Enable virtual scrolling (render only visible items) |
+| `buffer` | Number | `500` | Extra render range outside viewport in px when virtualization is enabled |
 | `placeholderColor` | String | `'#eee'` | Background color for unloaded images |
 | `renderItem` | Function | `null` | Custom render function `(item, index) => HTMLElement` |
 | `onItemClick` | Function | `null` | Click handler `({ index, itemData, originalEvent }) => void` |
@@ -88,7 +90,7 @@ gallery.render();
 const gallery = new SmartGallery('#gallery', {
     onItemClick: ({ index }) => {
         // Open your lightbox here using the index
-        // See demo/index.html for full PhotoSwipe example
+        // See index.html for full PhotoSwipe example
     }
 });
 ```
