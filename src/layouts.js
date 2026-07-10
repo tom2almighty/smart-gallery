@@ -14,14 +14,17 @@ function alignBoxes(boxes) {
     return maxBottom;
 }
 
-function getColumnMetrics(containerWidth, { gap, columnWidth, columns }) {
+function getColumnMetrics(containerWidth, { gap: requestedGap, columnWidth, columns }) {
     let colCount = columns;
-    let colW;
+    let gap = requestedGap;
 
     if (columns === 'auto') {
         colCount = Math.max(1, Math.floor((containerWidth + gap) / (columnWidth + gap)));
+    } else if (colCount > 1) {
+        const largestUsableGap = Math.max(0, (containerWidth - colCount) / (colCount - 1));
+        gap = Math.min(gap, largestUsableGap);
     }
-    colW = (containerWidth - (colCount - 1) * gap) / colCount;
+    const colW = (containerWidth - (colCount - 1) * gap) / colCount;
     return { gap, colCount, colW };
 }
 
