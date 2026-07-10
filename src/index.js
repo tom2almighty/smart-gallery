@@ -13,6 +13,7 @@ const DEFAULT_OPTIONS = Object.freeze({
     itemClassName: 'sg-item',
     virtualize: true,
     buffer: 500,
+    scrollContainer: 'auto',
     placeholderColor: '#eee',
     renderItem: null,
     onItemClick: null
@@ -52,6 +53,12 @@ function normalizeOptions(options = {}) {
     }
     if (typeof normalized.virtualize !== 'boolean') {
         throw new TypeError('SmartGallery: "virtualize" 必须是布尔值。');
+    }
+    if (normalized.scrollContainer !== 'auto'
+        && normalized.scrollContainer !== window
+        && (!normalized.scrollContainer
+            || normalized.scrollContainer.nodeType !== Node.ELEMENT_NODE)) {
+        throw new TypeError('SmartGallery: "scrollContainer" 必须是 "auto"、window 或 DOM 元素。');
     }
     if (typeof normalized.className !== 'string' || /\s/.test(normalized.className)) {
         throw new TypeError('SmartGallery: "className" 必须是单个 CSS 类名。');
@@ -125,7 +132,9 @@ class SmartGallery {
 
         // Scroll handler for virtualization
         if (this.options.virtualize) {
-            this.scrollContainer = this._getScrollParent(this.container);
+            this.scrollContainer = this.options.scrollContainer === 'auto'
+                ? this._getScrollParent(this.container)
+                : this.options.scrollContainer;
             this.scrollHandler = this._throttle(this._handleScroll.bind(this), 50);
             this.scrollContainer.addEventListener('scroll', this.scrollHandler, { passive: true });
         }
@@ -137,7 +146,7 @@ class SmartGallery {
             const style = window.getComputedStyle(parent);
             const overflowY = style.overflowY;
             const isScrollable = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-            if (isScrollable && parent.scrollHeight > parent.clientHeight) {
+            if (isScrollable) {
                 return parent;
             }
             parent = parent.parentElement;
