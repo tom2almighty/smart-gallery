@@ -91,6 +91,7 @@ class SmartGallery {
         this._options = normalizeOptions(options);
 
         this._items = [];
+        this._nextItemId = 1;
         this.geometry = []; // Calculated layout positions {left, top, width, height, itemIndex}
         this.renderedIndices = new Set(); // Track rendered items for virtualization
         this.mountedItemElements = new Map();
@@ -175,15 +176,29 @@ class SmartGallery {
         this.scrollContainer = window;
     }
 
-    _normalizeItems(items) {
+    _normalizeItems(items, existingIds = new Set()) {
         if (!Array.isArray(items)) {
             throw new TypeError('SmartGallery: items 必须是数组。');
         }
 
+        const seenIds = new Set(existingIds);
         return items.map((item, index) => {
             if (!item || typeof item !== 'object' || Array.isArray(item)) {
                 throw new TypeError(`SmartGallery: items[${index}] 必须是对象。`);
             }
+
+            let id = item.id;
+            if (id === undefined || id === null) {
+                do {
+                    id = `sg-${this._nextItemId++}`;
+                } while (seenIds.has(id));
+            } else if (typeof id !== 'string' && typeof id !== 'number') {
+                throw new TypeError(`SmartGallery: items[${index}].id 必须是字符串或数字。`);
+            }
+            if (seenIds.has(id)) {
+                throw new TypeError(`SmartGallery: 图片 id "${id}" 重复。`);
+            }
+            seenIds.add(id);
 
             let aspectRatio = Number(item.aspectRatio);
             if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
@@ -198,7 +213,7 @@ class SmartGallery {
                 aspectRatio = 1;
             }
 
-            return { ...item, aspectRatio };
+            return { ...item, id, aspectRatio };
         });
     }
 
@@ -217,7 +232,8 @@ class SmartGallery {
 
     addItems(items) {
         this._assertActive();
-        this._items = [...this._items, ...this._normalizeItems(items)];
+        const existingIds = new Set(this._items.map(item => item.id));
+        this._items = [...this._items, ...this._normalizeItems(items, existingIds)];
         this.render();
         return this;
     }
@@ -272,12 +288,18 @@ class SmartGallery {
         return this._items.map(item => ({ ...item }));
     }
 
-    getItem(index) {
-        const item = this._items[index];
+    getIndex(id) {
+        return this._items.findIndex(item => item.id === id);
+    }
+
+    getItem(id) {
+        const item = this._items.find(candidate => candidate.id === id);
         return item ? { ...item } : null;
     }
 
-    getGeometry(index) {
+    getGeometry(id) {
+        const index = this.getIndex(id);
+        if (index === -1) return null;
         const box = this.geometry[index];
         return box ? { ...box } : null;
     }
@@ -493,7 +515,7 @@ class SmartGallery {
         const itemData = this._items[index];
         const div = document.createElement('div');
         div.className = this._options.itemClassName;
-        div.id = `sg-item-${index}`; // Keep id convention for compatibility/debugging
+        div.dataset.sgId = String(itemData.id);
         div.style.position = 'absolute';
         div.style.left = `${box.left}px`;
         div.style.top = `${box.top}px`;
@@ -527,7 +549,14 @@ class SmartGallery {
         // Click event
         div.addEventListener('click', (event) => {
             if (this._options.onItemClick) {
-                this._options.onItemClick({ index, itemData, originalEvent: event });
+                this._options.onItemClick({
+                    id: itemData.id,
+                    index,
+                    item: { ...itemData },
+                    element: div,
+                    geometry: { ...box },
+                    originalEvent: event
+                });
             }
         });
 

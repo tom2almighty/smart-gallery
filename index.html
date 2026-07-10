@@ -360,7 +360,11 @@
       window.addMoreItems = async () => {
         // Mock adding more
         const items = await loadImages(imageFiles);
-        const newItems = items.map((item) => ({ ...item, id: Date.now() }));
+        const batchId = Date.now();
+        const newItems = items.map((item, index) => ({
+          ...item,
+          id: `${batchId}-${index}`,
+        }));
         renderWithStats(() => gallery.addItems(newItems));
       };
 
