@@ -104,7 +104,16 @@ class SmartGallery {
         this.scrollHandler = null;
         this.scrollContainer = window;
         this.isResizing = false;
+        this.isDestroyed = false;
+        this.resizeTimer = null;
+        this.animationFrame = null;
         this.lastObservedWidth = this.container.clientWidth;
+        this.originalContainerPosition = this.container.style.position;
+        this.originalContainerHeight = this.container.style.height;
+        this.hadSmartGalleryClass = this.container.classList.contains('smart-gallery');
+        this.hadCustomClass = this.options.className
+            ? this.container.classList.contains(this.options.className)
+            : false;
 
         this._init();
     }
@@ -117,14 +126,14 @@ class SmartGallery {
         }
         
         // Debounced resize handler
-        let resizeTimeout;
         this.resizeObserver = new ResizeObserver(() => {
-            if (this.isResizing) return;
+            if (this.isDestroyed || this.isResizing) return;
             const currentWidth = this.container.clientWidth;
             if (Math.abs(currentWidth - this.lastObservedWidth) < 1) return;
             this.lastObservedWidth = currentWidth;
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
+            clearTimeout(this.resizeTimer);
+            this.resizeTimer = setTimeout(() => {
+                this.resizeTimer = null;
                 this.render();
             }, 100);
         });
@@ -184,13 +193,21 @@ class SmartGallery {
     }
 
     render() {
-        if (!this.container || this.items.length === 0) return;
+        if (this.isDestroyed) {
+            throw new Error('SmartGallery: 实例已销毁，不能继续渲染。');
+        }
+        if (this.items.length === 0) {
+            this._resetRenderedState();
+            this.container.style.height = '0px';
+            return;
+        }
         this.isResizing = true;
 
         try {
             this.options = normalizeOptions(this.options);
             const containerWidth = this.container.clientWidth;
             if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+                this._resetRenderedState();
                 this.container.style.height = '0px';
                 return;
             }
@@ -198,16 +215,7 @@ class SmartGallery {
             const { layout } = this.options;
             let containerHeight = 0;
 
-            // Clean up everything for full re-render
-            this.renderedIndices.clear();
-            this.mountedItemElements.clear();
-            this.topSortedGeometryIndices = [];
-            this.topSortedStarts = [];
-            this.maxGeometryHeight = 0;
-            this.currentVisibleStartPos = -1;
-            this.currentVisibleEndPos = -1;
-            this.container.innerHTML = '';
-            this.geometry = []; // Clear geometry
+            this._resetRenderedState();
 
             let result;
             if (layout === 'justified') {
@@ -229,6 +237,18 @@ class SmartGallery {
         } finally {
             this.isResizing = false;
         }
+    }
+
+    _resetRenderedState() {
+        this.renderedIndices.clear();
+        this.mountedItemElements.clear();
+        this.topSortedGeometryIndices = [];
+        this.topSortedStarts = [];
+        this.maxGeometryHeight = 0;
+        this.currentVisibleStartPos = -1;
+        this.currentVisibleEndPos = -1;
+        this.geometry = [];
+        this.container.replaceChildren();
     }
 
     _buildVisibleIndex() {
@@ -434,22 +454,31 @@ class SmartGallery {
     }
     
     _handleScroll() {
-        if (!this.isResizing) {
-            requestAnimationFrame(() => this._updateVisibleItems());
+        if (!this.isDestroyed && !this.isResizing && this.animationFrame === null) {
+            this.animationFrame = requestAnimationFrame(() => {
+                this.animationFrame = null;
+                if (!this.isDestroyed) this._updateVisibleItems();
+            });
         }
     }
 
     _throttle(func, limit) {
-        let inThrottle;
-        return function() {
+        let timer = null;
+        const throttled = function() {
             const args = arguments;
             const context = this;
-            if (!inThrottle) {
+            if (timer === null) {
                 func.apply(context, args);
-                inThrottle = true;
-                setTimeout(() => inThrottle = false, limit);
+                timer = setTimeout(() => {
+                    timer = null;
+                }, limit);
             }
-        }
+        };
+        throttled.cancel = () => {
+            clearTimeout(timer);
+            timer = null;
+        };
+        return throttled;
     }
 
     _applyPixelAlignment(boxes) {
@@ -737,11 +766,33 @@ class SmartGallery {
     }
 
     destroy() {
+        if (this.isDestroyed) return;
+        this.isDestroyed = true;
+
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
         }
         if (this.scrollHandler && this.scrollContainer) {
             this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
+        }
+        clearTimeout(this.resizeTimer);
+        this.resizeTimer = null;
+        if (this.scrollHandler && this.scrollHandler.cancel) {
+            this.scrollHandler.cancel();
+        }
+        if (this.animationFrame !== null) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+        }
+
+        this._resetRenderedState();
+        this.container.style.position = this.originalContainerPosition;
+        this.container.style.height = this.originalContainerHeight;
+        if (!this.hadSmartGalleryClass) {
+            this.container.classList.remove('smart-gallery');
+        }
+        if (this.options.className && !this.hadCustomClass) {
+            this.container.classList.remove(this.options.className);
         }
     }
 }
