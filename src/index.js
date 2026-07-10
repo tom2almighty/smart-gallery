@@ -21,8 +21,11 @@ const DEFAULT_OPTIONS = Object.freeze({
     buffer: 500,
     scrollContainer: 'auto',
     placeholderColor: '#eee',
+    errorClassName: 'sg-item-error',
     renderItem: null,
-    onItemClick: null
+    onItemClick: null,
+    onImageLoad: null,
+    onImageError: null
 });
 
 const LAYOUTS = new Set(['justified', 'masonry', 'grid']);
@@ -77,7 +80,12 @@ function normalizeOptions(options = {}) {
     if (typeof normalized.placeholderColor !== 'string') {
         throw new TypeError('SmartGallery: "placeholderColor" 必须是字符串。');
     }
-    for (const callbackName of ['renderItem', 'onItemClick']) {
+    if (typeof normalized.errorClassName !== 'string'
+        || normalized.errorClassName.length === 0
+        || /\s/.test(normalized.errorClassName)) {
+        throw new TypeError('SmartGallery: "errorClassName" 必须是单个非空 CSS 类名。');
+    }
+    for (const callbackName of ['renderItem', 'onItemClick', 'onImageLoad', 'onImageError']) {
         const callback = normalized[callbackName];
         if (callback !== null && typeof callback !== 'function') {
             throw new TypeError(`SmartGallery: "${callbackName}" 必须是函数或 null。`);
@@ -193,6 +201,10 @@ class SmartGallery {
             if (!item || typeof item !== 'object' || Array.isArray(item)) {
                 throw new TypeError(`SmartGallery: items[${index}] 必须是对象。`);
             }
+            if (this._options.renderItem === null
+                && (typeof item.src !== 'string' || item.src.length === 0)) {
+                throw new TypeError(`SmartGallery: 默认渲染要求 items[${index}].src 是非空字符串。`);
+            }
 
             let id = item.id;
             if (id === undefined || id === null) {
@@ -275,9 +287,19 @@ class SmartGallery {
         }
         const previousClassName = this._options.className;
         const nextOptions = normalizeOptions({ ...this._options, ...options });
+        if (nextOptions.renderItem === null) {
+            const invalidIndex = this._items.findIndex(
+                item => typeof item.src !== 'string' || item.src.length === 0
+            );
+            if (invalidIndex !== -1) {
+                throw new TypeError(`SmartGallery: 默认渲染要求 items[${invalidIndex}].src 是非空字符串。`);
+            }
+        }
         if (nextOptions.itemClassName !== this._options.itemClassName
             || nextOptions.renderItem !== this._options.renderItem
-            || nextOptions.placeholderColor !== this._options.placeholderColor) {
+            || nextOptions.placeholderColor !== this._options.placeholderColor
+            || nextOptions.errorClassName !== this._options.errorClassName
+            || nextOptions.onItemClick !== this._options.onItemClick) {
             this.contentNeedsReset = true;
         }
 
@@ -569,13 +591,20 @@ class SmartGallery {
 
         // Render content
         if (this._options.renderItem) {
-            div.appendChild(this._options.renderItem(itemData, index));
+            const content = this._options.renderItem(itemData, index);
+            if (!content || typeof content.nodeType !== 'number') {
+                throw new TypeError('SmartGallery: renderItem 必须返回 DOM Node。');
+            }
+            div.appendChild(content);
         } else {
             // Default render with placeholder support
             div.style.backgroundColor = itemData.placeholderColor || this._options.placeholderColor;
 
             const img = document.createElement('img');
-            img.src = itemData.src;
+            img.alt = typeof itemData.alt === 'string' ? itemData.alt : '';
+            if (typeof itemData.title === 'string') img.title = itemData.title;
+            if (typeof itemData.srcset === 'string') img.srcset = itemData.srcset;
+            if (typeof itemData.sizes === 'string') img.sizes = itemData.sizes;
             img.style.width = '100%';
             img.style.height = '100%';
             img.style.objectFit = 'cover';
@@ -583,16 +612,42 @@ class SmartGallery {
             img.style.opacity = '0'; // Start invisible
             img.style.transition = 'opacity 0.3s';
             img.loading = 'lazy'; // Native lazy load
+            img.decoding = 'async';
+            img.draggable = false;
 
-            img.onload = () => {
+            img.onload = (event) => {
                 img.style.opacity = '1';
+                div.classList.remove(this._options.errorClassName);
+                if (this._options.onImageLoad) {
+                    this._options.onImageLoad({
+                        id: itemData.id,
+                        index,
+                        item: { ...itemData },
+                        image: img,
+                        element: div,
+                        originalEvent: event
+                    });
+                }
             };
+            img.onerror = (event) => {
+                div.classList.add(this._options.errorClassName);
+                if (this._options.onImageError) {
+                    this._options.onImageError({
+                        id: itemData.id,
+                        index,
+                        item: { ...itemData },
+                        image: img,
+                        element: div,
+                        originalEvent: event
+                    });
+                }
+            };
+            img.src = itemData.src;
 
             div.appendChild(img);
         }
 
-        // Click event
-        div.addEventListener('click', (event) => {
+        const activate = (event) => {
             if (this._options.onItemClick) {
                 this._options.onItemClick({
                     id: itemData.id,
@@ -603,7 +658,17 @@ class SmartGallery {
                     originalEvent: event
                 });
             }
-        });
+        };
+        if (this._options.onItemClick) {
+            div.tabIndex = 0;
+            div.setAttribute('role', 'button');
+            div.addEventListener('click', activate);
+            div.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                activate(event);
+            });
+        }
 
         parentNode.appendChild(div);
         this.mountedItemElements.set(index, div);

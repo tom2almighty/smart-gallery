@@ -23,7 +23,10 @@ gallery.setItems([
     src: '/images/photo-1.jpg',
     width: 1600,
     height: 1200,
-    alt: '图片说明'
+    alt: '图片说明',
+    title: '可选标题',
+    srcset: '/images/photo-1-800.jpg 800w, /images/photo-1.jpg 1600w',
+    sizes: '(max-width: 600px) 100vw, 50vw'
   },
   {
     src: '/images/photo-2.jpg',
@@ -54,8 +57,11 @@ gallery.setItems([
 | `buffer` | `500` | 可视区域上下额外挂载的像素范围 |
 | `scrollContainer` | `'auto'` | `'auto'`、`window` 或明确的滚动元素 |
 | `placeholderColor` | `'#eee'` | 默认占位背景色 |
+| `errorClassName` | `'sg-item-error'` | 图片加载失败时添加到外层元素的类名 |
 | `renderItem` | `null` | 自定义内容函数 `(item, index) => Node` |
 | `onItemClick` | `null` | 图片点击回调 |
+| `onImageLoad` | `null` | 默认图片加载成功回调 |
+| `onImageError` | `null` | 默认图片加载失败回调 |
 
 运行时通过 `setOptions()` 修改配置，不要直接修改实例内部字段：
 

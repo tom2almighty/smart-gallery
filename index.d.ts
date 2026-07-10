@@ -35,7 +35,16 @@ export interface ItemClickPayload {
   item: GalleryItem;
   element: HTMLDivElement;
   geometry: GalleryGeometry;
-  originalEvent: MouseEvent;
+  originalEvent: MouseEvent | KeyboardEvent;
+}
+
+export interface ImageEventPayload {
+  id: GalleryItemId;
+  index: number;
+  item: GalleryItem;
+  image: HTMLImageElement;
+  element: HTMLDivElement;
+  originalEvent: Event;
 }
 
 export interface SmartGalleryOptions {
@@ -51,8 +60,11 @@ export interface SmartGalleryOptions {
   buffer?: number;
   scrollContainer?: 'auto' | Window | HTMLElement;
   placeholderColor?: string;
+  errorClassName?: string;
   renderItem?: ((item: GalleryItem, index: number) => Node) | null;
   onItemClick?: ((payload: ItemClickPayload) => void) | null;
+  onImageLoad?: ((payload: ImageEventPayload) => void) | null;
+  onImageError?: ((payload: ImageEventPayload) => void) | null;
 }
 
 export default class SmartGallery {
