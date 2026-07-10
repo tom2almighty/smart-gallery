@@ -8,6 +8,8 @@ A lightweight, dependency-free JavaScript library for creating beautiful gallery
 - **Lightbox Ready**: Easy integration with PhotoSwipe, FancyBox, etc.
 - **Responsive**: Automatically updates when container width changes.
 
+See [API.md](API.md) for the complete API and [MIGRATION.md](MIGRATION.md) when upgrading from 1.x.
+
 ## Installation
 
 ### 1. ES Module (Recommended)
@@ -23,27 +25,27 @@ import SmartGallery from 'smart-gallery';
 
 ### 2. Browser Script (UMD)
 ```html
-<script src="dist/smart-gallery.min.js"></script>
+<script src="dist/smart-gallery.umd.js"></script>
 <!-- SmartGallery is available as a global variable -->
 ```
 
 ### 3. CDN
 ```html
 <!-- jsDelivr -->
-<script src="https://cdn.jsdelivr.net/npm/smart-gallery/dist/smart-gallery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/smart-gallery/dist/smart-gallery.umd.js"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/smart-gallery/dist/smart-gallery.min.js"></script>
+<script src="https://unpkg.com/smart-gallery/dist/smart-gallery.umd.js"></script>
 ```
 
 ## Quick Start
 
-### 2. HTML Structure
+### 1. HTML Structure
 ```html
 <div id="my-gallery"></div>
 ```
 
-### 3. Initialize
+### 2. Initialize
 ```javascript
 const gallery = new SmartGallery('#my-gallery', {
     layout: 'justified', // 'justified' | 'masonry' | 'grid'
@@ -55,15 +57,14 @@ const gallery = new SmartGallery('#my-gallery', {
 // Note: You should provide either `width` and `height`, OR `aspectRatio`.
 // This allows the library to calculate layout before images load (preventing layout shift).
 // If `aspectRatio` is invalid, SmartGallery will fallback to `width/height`, then finally `1`.
-gallery.addItems([
+gallery.setItems([
     { src: 'image1.jpg', width: 800, height: 600 },
     { src: 'image2.jpg', width: 1024, height: 768 },
     { src: 'image3.jpg', aspectRatio: 1.5 }, // width/height optional if aspectRatio is known
     // ...
 ]);
 
-// Render
-gallery.render();
+// setItems/addItems automatically update the layout.
 ```
 
 ## Options
@@ -82,7 +83,7 @@ gallery.render();
 | `buffer` | Number | `500` | Extra render range outside viewport in px when virtualization is enabled |
 | `placeholderColor` | String | `'#eee'` | Background color for unloaded images |
 | `renderItem` | Function | `null` | Custom render function `(item, index) => HTMLElement` |
-| `onItemClick` | Function | `null` | Click handler `({ index, itemData, originalEvent }) => void` |
+| `onItemClick` | Function | `null` | Click handler `({ id, index, item, element, geometry, originalEvent }) => void` |
 
 ## Lightbox Integration (Example with PhotoSwipe)
 
