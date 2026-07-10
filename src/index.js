@@ -599,7 +599,7 @@ class SmartGallery {
                     index,
                     item: { ...itemData },
                     element: div,
-                    geometry: { ...box },
+                    geometry: this.getGeometry(itemData.id),
                     originalEvent: event
                 });
             }
