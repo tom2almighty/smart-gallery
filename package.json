@@ -33,6 +33,8 @@
 	"files": [
 		"dist",
 		"index.d.ts",
+		"API.md",
+		"MIGRATION.md",
 		"README.md",
 		"LICENSE"
 	],
