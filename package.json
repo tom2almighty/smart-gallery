@@ -21,8 +21,10 @@
 	"main": "./dist/smart-gallery.cjs",
 	"module": "./dist/smart-gallery.esm.js",
 	"browser": "./dist/smart-gallery.umd.js",
+	"types": "./index.d.ts",
 	"exports": {
 		".": {
+			"types": "./index.d.ts",
 			"import": "./dist/smart-gallery.esm.js",
 			"require": "./dist/smart-gallery.cjs",
 			"default": "./dist/smart-gallery.esm.js"
@@ -30,6 +32,7 @@
 	},
 	"files": [
 		"dist",
+		"index.d.ts",
 		"README.md",
 		"LICENSE"
 	],
