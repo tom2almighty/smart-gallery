@@ -2,38 +2,86 @@
  * SmartGallery - A lightweight, dependency-free gallery layout library.
  * Supports Justified, Masonry, and Grid layouts with virtualization.
  */
+const DEFAULT_OPTIONS = Object.freeze({
+    layout: 'justified',
+    gap: 10,
+    targetRowHeight: 300,
+    lastRowBehavior: 'left',
+    columnWidth: 300,
+    columns: 'auto',
+    className: '',
+    itemClassName: 'sg-item',
+    virtualize: true,
+    buffer: 500,
+    placeholderColor: '#eee',
+    renderItem: null,
+    onItemClick: null
+});
+
+const LAYOUTS = new Set(['justified', 'masonry', 'grid']);
+const LAST_ROW_BEHAVIORS = new Set(['left', 'center', 'right', 'fill', 'hide']);
+
+function assertFiniteNumber(value, name, { min = -Infinity, exclusiveMin = false } = {}) {
+    if (!Number.isFinite(value) || (exclusiveMin ? value <= min : value < min)) {
+        const comparison = exclusiveMin ? `大于 ${min}` : `不小于 ${min}`;
+        throw new TypeError(`SmartGallery: "${name}" 必须是${comparison}的有限数字。`);
+    }
+}
+
+function normalizeOptions(options = {}) {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+        throw new TypeError('SmartGallery: options 必须是对象。');
+    }
+
+    const normalized = { ...DEFAULT_OPTIONS, ...options };
+    if (!LAYOUTS.has(normalized.layout)) {
+        throw new TypeError(`SmartGallery: 不支持布局 "${normalized.layout}"。`);
+    }
+    if (!LAST_ROW_BEHAVIORS.has(normalized.lastRowBehavior)) {
+        throw new TypeError(`SmartGallery: 不支持最后一行行为 "${normalized.lastRowBehavior}"。`);
+    }
+
+    assertFiniteNumber(normalized.gap, 'gap', { min: 0 });
+    assertFiniteNumber(normalized.targetRowHeight, 'targetRowHeight', { min: 0, exclusiveMin: true });
+    assertFiniteNumber(normalized.columnWidth, 'columnWidth', { min: 0, exclusiveMin: true });
+    assertFiniteNumber(normalized.buffer, 'buffer', { min: 0 });
+
+    if (normalized.columns !== 'auto'
+        && (!Number.isInteger(normalized.columns) || normalized.columns <= 0)) {
+        throw new TypeError('SmartGallery: "columns" 必须是 "auto" 或正整数。');
+    }
+    if (typeof normalized.virtualize !== 'boolean') {
+        throw new TypeError('SmartGallery: "virtualize" 必须是布尔值。');
+    }
+    if (typeof normalized.className !== 'string' || /\s/.test(normalized.className)) {
+        throw new TypeError('SmartGallery: "className" 必须是单个 CSS 类名。');
+    }
+    if (typeof normalized.itemClassName !== 'string'
+        || normalized.itemClassName.length === 0
+        || /\s/.test(normalized.itemClassName)) {
+        throw new TypeError('SmartGallery: "itemClassName" 必须是单个非空 CSS 类名。');
+    }
+    if (typeof normalized.placeholderColor !== 'string') {
+        throw new TypeError('SmartGallery: "placeholderColor" 必须是字符串。');
+    }
+    for (const callbackName of ['renderItem', 'onItemClick']) {
+        const callback = normalized[callbackName];
+        if (callback !== null && typeof callback !== 'function') {
+            throw new TypeError(`SmartGallery: "${callbackName}" 必须是函数或 null。`);
+        }
+    }
+
+    return normalized;
+}
+
 class SmartGallery {
     constructor(container, options = {}) {
         this.container = typeof container === 'string' ? document.querySelector(container) : container;
-        if (!this.container) {
-            throw new Error('SmartGallery: Container not found.');
+        if (!this.container || this.container.nodeType !== Node.ELEMENT_NODE) {
+            throw new TypeError('SmartGallery: container 必须是存在的 DOM 元素或有效选择器。');
         }
 
-        this.options = Object.assign({
-            layout: 'justified', // 'justified', 'masonry', 'grid'
-            gap: 10,
-            
-            // Justified options
-            targetRowHeight: 300,
-            lastRowBehavior: 'left', // 'left', 'center', 'right', 'fill', 'hide'
-            
-            // Masonry / Grid options
-            columnWidth: 300, 
-            columns: 'auto', // number or 'auto'
-            
-            // General
-            className: '',
-            itemClassName: 'sg-item',
-            
-            // Optimization
-            virtualize: true,
-            buffer: 500, // px, extra content to render outside viewport
-            
-            // Rendering
-            placeholderColor: '#eee', // Default placeholder color
-            renderItem: null, // Custom render function
-            onItemClick: null // Click handler
-        }, options);
+        this.options = normalizeOptions(options);
 
         this.items = [];
         this.geometry = []; // Calculated layout positions {left, top, width, height, itemIndex}
@@ -98,8 +146,16 @@ class SmartGallery {
     }
 
     addItems(items) {
+        if (!Array.isArray(items)) {
+            throw new TypeError('SmartGallery: addItems(items) 的 items 必须是数组。');
+        }
+
         // Normalize items: calculate aspectRatio if not provided or invalid
-        const newItems = items.map(item => {
+        const newItems = items.map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                throw new TypeError(`SmartGallery: items[${index}] 必须是对象。`);
+            }
+
             let aspectRatio = Number(item.aspectRatio);
             if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
                 const width = Number(item.width);
@@ -123,7 +179,12 @@ class SmartGallery {
         this.isResizing = true;
 
         try {
+            this.options = normalizeOptions(this.options);
             const containerWidth = this.container.clientWidth;
+            if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+                this.container.style.height = '0px';
+                return;
+            }
             this.lastObservedWidth = containerWidth;
             const { layout } = this.options;
             let containerHeight = 0;
