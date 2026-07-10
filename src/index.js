@@ -88,9 +88,9 @@ class SmartGallery {
             throw new TypeError('SmartGallery: container 必须是存在的 DOM 元素或有效选择器。');
         }
 
-        this.options = normalizeOptions(options);
+        this._options = normalizeOptions(options);
 
-        this.items = [];
+        this._items = [];
         this.geometry = []; // Calculated layout positions {left, top, width, height, itemIndex}
         this.renderedIndices = new Set(); // Track rendered items for virtualization
         this.mountedItemElements = new Map();
@@ -111,8 +111,8 @@ class SmartGallery {
         this.originalContainerPosition = this.container.style.position;
         this.originalContainerHeight = this.container.style.height;
         this.hadSmartGalleryClass = this.container.classList.contains('smart-gallery');
-        this.hadCustomClass = this.options.className
-            ? this.container.classList.contains(this.options.className)
+        this.hadCustomClass = this._options.className
+            ? this.container.classList.contains(this._options.className)
             : false;
 
         this._init();
@@ -121,8 +121,8 @@ class SmartGallery {
     _init() {
         this.container.style.position = 'relative';
         this.container.classList.add('smart-gallery');
-        if (this.options.className) {
-            this.container.classList.add(this.options.className);
+        if (this._options.className) {
+            this.container.classList.add(this._options.className);
         }
         
         // Debounced resize handler
@@ -140,13 +140,7 @@ class SmartGallery {
         this.resizeObserver.observe(this.container);
 
         // Scroll handler for virtualization
-        if (this.options.virtualize) {
-            this.scrollContainer = this.options.scrollContainer === 'auto'
-                ? this._getScrollParent(this.container)
-                : this.options.scrollContainer;
-            this.scrollHandler = this._throttle(this._handleScroll.bind(this), 50);
-            this.scrollContainer.addEventListener('scroll', this.scrollHandler, { passive: true });
-        }
+        this._bindScrollListener();
     }
 
     _getScrollParent(el) {
@@ -163,13 +157,30 @@ class SmartGallery {
         return window;
     }
 
-    addItems(items) {
+    _bindScrollListener() {
+        if (!this._options.virtualize) return;
+        this.scrollContainer = this._options.scrollContainer === 'auto'
+            ? this._getScrollParent(this.container)
+            : this._options.scrollContainer;
+        this.scrollHandler = this._throttle(this._handleScroll.bind(this), 50);
+        this.scrollContainer.addEventListener('scroll', this.scrollHandler, { passive: true });
+    }
+
+    _unbindScrollListener() {
+        if (this.scrollHandler && this.scrollContainer) {
+            this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
+            this.scrollHandler.cancel();
+        }
+        this.scrollHandler = null;
+        this.scrollContainer = window;
+    }
+
+    _normalizeItems(items) {
         if (!Array.isArray(items)) {
-            throw new TypeError('SmartGallery: addItems(items) 的 items 必须是数组。');
+            throw new TypeError('SmartGallery: items 必须是数组。');
         }
 
-        // Normalize items: calculate aspectRatio if not provided or invalid
-        const newItems = items.map((item, index) => {
+        return items.map((item, index) => {
             if (!item || typeof item !== 'object' || Array.isArray(item)) {
                 throw new TypeError(`SmartGallery: items[${index}] 必须是对象。`);
             }
@@ -189,14 +200,93 @@ class SmartGallery {
 
             return { ...item, aspectRatio };
         });
-        this.items = [...this.items, ...newItems];
+    }
+
+    _assertActive() {
+        if (this.isDestroyed) {
+            throw new Error('SmartGallery: 实例已销毁。');
+        }
+    }
+
+    setItems(items) {
+        this._assertActive();
+        this._items = this._normalizeItems(items);
+        this.render();
+        return this;
+    }
+
+    addItems(items) {
+        this._assertActive();
+        this._items = [...this._items, ...this._normalizeItems(items)];
+        this.render();
+        return this;
+    }
+
+    removeItem(id) {
+        this._assertActive();
+        const index = this._items.findIndex(item => item.id === id);
+        if (index === -1) return false;
+        this._items = [
+            ...this._items.slice(0, index),
+            ...this._items.slice(index + 1)
+        ];
+        this.render();
+        return true;
+    }
+
+    clear() {
+        this._assertActive();
+        this._items = [];
+        this.render();
+        return this;
+    }
+
+    setOptions(options) {
+        this._assertActive();
+        if (!options || typeof options !== 'object' || Array.isArray(options)) {
+            throw new TypeError('SmartGallery: setOptions(options) 的 options 必须是对象。');
+        }
+        const previousClassName = this._options.className;
+        const nextOptions = normalizeOptions({ ...this._options, ...options });
+
+        if (previousClassName !== nextOptions.className) {
+            if (previousClassName && !this.hadCustomClass) {
+                this.container.classList.remove(previousClassName);
+            }
+            this.hadCustomClass = nextOptions.className
+                ? this.container.classList.contains(nextOptions.className)
+                : false;
+            if (nextOptions.className) {
+                this.container.classList.add(nextOptions.className);
+            }
+        }
+
+        this._unbindScrollListener();
+        this._options = nextOptions;
+        this._bindScrollListener();
+        this.render();
+        return this;
+    }
+
+    getItems() {
+        return this._items.map(item => ({ ...item }));
+    }
+
+    getItem(index) {
+        const item = this._items[index];
+        return item ? { ...item } : null;
+    }
+
+    getGeometry(index) {
+        const box = this.geometry[index];
+        return box ? { ...box } : null;
     }
 
     render() {
         if (this.isDestroyed) {
             throw new Error('SmartGallery: 实例已销毁，不能继续渲染。');
         }
-        if (this.items.length === 0) {
+        if (this._items.length === 0) {
             this._resetRenderedState();
             this.container.style.height = '0px';
             return;
@@ -204,7 +294,7 @@ class SmartGallery {
         this.isResizing = true;
 
         try {
-            this.options = normalizeOptions(this.options);
+            this._options = normalizeOptions(this._options);
             const containerWidth = this.container.clientWidth;
             if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
                 this._resetRenderedState();
@@ -212,18 +302,18 @@ class SmartGallery {
                 return;
             }
             this.lastObservedWidth = containerWidth;
-            const { layout } = this.options;
+            const { layout } = this._options;
             let containerHeight = 0;
 
             this._resetRenderedState();
 
             let result;
             if (layout === 'justified') {
-                result = this._computeJustifiedLayout(this.items, containerWidth, this.options);
+                result = this._computeJustifiedLayout(this._items, containerWidth, this._options);
             } else if (layout === 'masonry') {
-                result = this._computeMasonryLayout(this.items, containerWidth, this.options);
+                result = this._computeMasonryLayout(this._items, containerWidth, this._options);
             } else if (layout === 'grid') {
-                result = this._computeGridLayout(this.items, containerWidth, this.options);
+                result = this._computeGridLayout(this._items, containerWidth, this._options);
             }
 
             this.geometry = result.boxes.map((box, i) => ({ ...box, itemIndex: i })); // Store index
@@ -316,7 +406,7 @@ class SmartGallery {
     }
 
     _updateVisibleItems() {
-        if (!this.options.virtualize) {
+        if (!this._options.virtualize) {
             // Render all with batched mount
             const fragment = document.createDocumentFragment();
             for (let i = 0; i < this.geometry.length; i++) {
@@ -331,7 +421,7 @@ class SmartGallery {
             return;
         }
 
-        const buffer = this.options.buffer;
+        const buffer = this._options.buffer;
         let scrollTop = 0;
         let viewportHeight = 0;
         let containerTop = 0;
@@ -400,9 +490,9 @@ class SmartGallery {
 
     _mountItem(box, parentNode = this.container) {
         const index = box.itemIndex;
-        const itemData = this.items[index];
+        const itemData = this._items[index];
         const div = document.createElement('div');
-        div.className = this.options.itemClassName;
+        div.className = this._options.itemClassName;
         div.id = `sg-item-${index}`; // Keep id convention for compatibility/debugging
         div.style.position = 'absolute';
         div.style.left = `${box.left}px`;
@@ -411,11 +501,11 @@ class SmartGallery {
         div.style.height = `${box.height}px`;
 
         // Render content
-        if (this.options.renderItem) {
-            div.appendChild(this.options.renderItem(itemData, index));
+        if (this._options.renderItem) {
+            div.appendChild(this._options.renderItem(itemData, index));
         } else {
             // Default render with placeholder support
-            div.style.backgroundColor = itemData.placeholderColor || this.options.placeholderColor;
+            div.style.backgroundColor = itemData.placeholderColor || this._options.placeholderColor;
 
             const img = document.createElement('img');
             img.src = itemData.src;
@@ -436,8 +526,8 @@ class SmartGallery {
 
         // Click event
         div.addEventListener('click', (event) => {
-            if (this.options.onItemClick) {
-                this.options.onItemClick({ index, itemData, originalEvent: event });
+            if (this._options.onItemClick) {
+                this._options.onItemClick({ index, itemData, originalEvent: event });
             }
         });
 
@@ -772,14 +862,9 @@ class SmartGallery {
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
         }
-        if (this.scrollHandler && this.scrollContainer) {
-            this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
-        }
+        this._unbindScrollListener();
         clearTimeout(this.resizeTimer);
         this.resizeTimer = null;
-        if (this.scrollHandler && this.scrollHandler.cancel) {
-            this.scrollHandler.cancel();
-        }
         if (this.animationFrame !== null) {
             cancelAnimationFrame(this.animationFrame);
             this.animationFrame = null;
@@ -791,8 +876,8 @@ class SmartGallery {
         if (!this.hadSmartGalleryClass) {
             this.container.classList.remove('smart-gallery');
         }
-        if (this.options.className && !this.hadCustomClass) {
-            this.container.classList.remove(this.options.className);
+        if (this._options.className && !this.hadCustomClass) {
+            this.container.classList.remove(this._options.className);
         }
     }
 }

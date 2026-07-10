@@ -199,7 +199,6 @@
       ];
 
       let gallery;
-      let allItemsCoords = []; // To keep track for lightboxes if needed, but SmartGallery has state.
       let renderCount = 0;
       let lastRenderDuration = 0;
       let isHeightPerturbed = false;
@@ -274,13 +273,12 @@
           // renderItem: (item) => { ... return customized DOM ... }
         });
 
-        gallery.addItems(initialItems);
-        renderWithStats();
+        renderWithStats(() => gallery.setItems(initialItems));
       }
 
       // 3. Integrate PhotoSwipe
       function openPhotoSwipe(index) {
-        const items = gallery.items.map((item) => ({
+        const items = gallery.getItems().map((item) => ({
           src: item.originalSrc || item.src,
           width: item.originalWidth || item.width,
           height: item.originalHeight || item.height,
@@ -300,14 +298,18 @@
       function updatePerfStats() {
         if (!gallery || !perfStatsEl) return;
         const mountedCount = document.querySelectorAll("#gallery .sg-item").length;
-        const totalCount = gallery.items.length;
+        const totalCount = gallery.getItems().length;
         perfStatsEl.textContent = `render: ${renderCount} (${lastRenderDuration.toFixed(1)}ms) · mounted: ${mountedCount} · items: ${totalCount}`;
       }
 
-      function renderWithStats() {
+      function renderWithStats(update) {
         if (!gallery) return;
         const t0 = performance.now();
-        gallery.render();
+        if (update) {
+          update();
+        } else {
+          gallery.render();
+        }
         lastRenderDuration = performance.now() - t0;
         renderCount += 1;
         updatePerfStats();
@@ -316,8 +318,6 @@
       // Controls
       window.changeLayout = (type) => {
         if (!gallery) return;
-        gallery.options.layout = type;
-
         document
           .querySelectorAll("button")
           .forEach((b) => b.classList.remove("active"));
@@ -331,44 +331,45 @@
           ? "none"
           : "flex";
 
-        renderWithStats();
+        renderWithStats(() => gallery.setOptions({ layout: type }));
       };
 
       window.updateRowHeight = (val) => {
         document.getElementById("val-row-height").textContent = val;
-        gallery.options.targetRowHeight = parseInt(val);
-        renderWithStats();
+        renderWithStats(() =>
+          gallery.setOptions({ targetRowHeight: parseInt(val) }),
+        );
       };
 
       window.updateLastRow = (val) => {
-        gallery.options.lastRowBehavior = val;
-        renderWithStats();
+        renderWithStats(() => gallery.setOptions({ lastRowBehavior: val }));
       };
 
       window.updateColWidth = (val) => {
         document.getElementById("val-col-width").textContent = val;
-        gallery.options.columnWidth = parseInt(val);
-        renderWithStats();
+        renderWithStats(() =>
+          gallery.setOptions({ columnWidth: parseInt(val) }),
+        );
       };
 
       window.updateGap = (val) => {
         document.getElementById("val-gap").textContent = val;
-        gallery.options.gap = parseInt(val);
-        renderWithStats();
+        renderWithStats(() => gallery.setOptions({ gap: parseInt(val) }));
       };
 
       window.addMoreItems = async () => {
         // Mock adding more
         const items = await loadImages(imageFiles);
         const newItems = items.map((item) => ({ ...item, id: Date.now() }));
-        gallery.addItems(newItems);
-        renderWithStats();
+        renderWithStats(() => gallery.addItems(newItems));
       };
 
       window.perturbHeight = () => {
         if (!gallery) return;
         isHeightPerturbed = !isHeightPerturbed;
-        gallery.container.style.paddingBottom = isHeightPerturbed ? "120px" : "0px";
+        document.getElementById("gallery").style.paddingBottom = isHeightPerturbed
+          ? "120px"
+          : "0px";
         setTimeout(updatePerfStats, 150);
       };
 
