@@ -648,13 +648,20 @@ class SmartGallery {
     }
 
     _applyPixelAlignment(boxes) {
+        let maxBottom = 0;
         for (let i = 0; i < boxes.length; i++) {
             const box = boxes[i];
-            box.left = Math.round(box.left);
-            box.top = Math.round(box.top);
-            box.width = Math.max(1, Math.round(box.width));
-            box.height = Math.max(1, Math.round(box.height));
+            const left = Math.round(box.left);
+            const top = Math.round(box.top);
+            const right = Math.round(box.left + box.width);
+            const bottom = Math.round(box.top + box.height);
+            box.left = left;
+            box.top = top;
+            box.width = Math.max(1, right - left);
+            box.height = Math.max(1, bottom - top);
+            maxBottom = Math.max(maxBottom, top + box.height);
         }
+        return maxBottom;
     }
 
     /**
@@ -803,8 +810,8 @@ class SmartGallery {
             }
         }
 
-        this._applyPixelAlignment(boxes);
-        return { boxes, containerHeight: Math.max(0, boxes.length > 0 ? top - gap : 0) };
+        const containerHeight = this._applyPixelAlignment(boxes);
+        return { boxes, containerHeight };
     }
 
     _getColumnMetrics(containerWidth, options) {
@@ -880,8 +887,6 @@ class SmartGallery {
             this._heapPush(heap, { colIndex: c, height: 0 });
         }
 
-        let maxHeight = 0;
-
         for (let i = 0; i < items.length; i++) {
             const minCol = this._heapPop(heap);
             const colIndex = minCol.colIndex;
@@ -896,12 +901,11 @@ class SmartGallery {
             });
 
             const nextHeight = minH + h + gap;
-            if (nextHeight > maxHeight) maxHeight = nextHeight;
             this._heapPush(heap, { colIndex, height: nextHeight });
         }
 
-        this._applyPixelAlignment(boxes);
-        return { boxes, containerHeight: Math.max(0, boxes.length > 0 ? maxHeight - gap : 0) };
+        const containerHeight = this._applyPixelAlignment(boxes);
+        return { boxes, containerHeight };
     }
 
     /**
@@ -926,9 +930,8 @@ class SmartGallery {
             });
         }
 
-        const rows = Math.ceil(items.length / colCount);
-        this._applyPixelAlignment(boxes);
-        return { boxes, containerHeight: rows * (itemH + gap) - gap }; // remove last gap
+        const containerHeight = this._applyPixelAlignment(boxes);
+        return { boxes, containerHeight };
     }
 
     destroy() {
