@@ -1,5 +1,38 @@
 {
+	"name": "smart-gallery",
+	"version": "2.0.0",
+	"description": "A lightweight, dependency-free JavaScript library for creating beautiful gallery layouts.",
+	"keywords": [
+		"justified",
+		"masonry",
+		"grid"
+	],
+	"homepage": "https://github.com/tom2almighty/smart-gallery#readme",
+	"bugs": {
+		"url": "https://github.com/tom2almighty/smart-gallery/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tom2almighty/smart-gallery.git"
+	},
+	"license": "ISC",
+	"author": "tom2almighty",
 	"type": "module",
+	"main": "./dist/smart-gallery.cjs",
+	"module": "./dist/smart-gallery.esm.js",
+	"browser": "./dist/smart-gallery.umd.js",
+	"exports": {
+		".": {
+			"import": "./dist/smart-gallery.esm.js",
+			"require": "./dist/smart-gallery.cjs",
+			"default": "./dist/smart-gallery.esm.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"scripts": {
 		"build": "rollup -c"
 	},

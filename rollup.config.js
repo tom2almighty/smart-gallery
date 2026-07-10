@@ -9,18 +9,18 @@ export default {
   input: 'src/index.js',
   output: [
     {
-      file: 'dist/smart-gallery.esm.min.js',
+      file: 'dist/smart-gallery.esm.js',
       format: 'esm',
       plugins: [terser(terserOptions)],
     },
     {
-      file: 'dist/smart-gallery.cjs.min.js',
+      file: 'dist/smart-gallery.cjs',
       format: 'cjs',
       exports: 'auto',
       plugins: [terser(terserOptions)],
     },
     {
-      file: 'dist/smart-gallery.min.js',
+      file: 'dist/smart-gallery.umd.js',
       format: 'umd',
       name: 'SmartGallery',
       plugins: [terser(terserOptions)],
