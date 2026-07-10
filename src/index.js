@@ -370,7 +370,12 @@ class SmartGallery {
             const { layout } = this._options;
             let containerHeight = 0;
 
-            this._resetRenderedState();
+            if (this.contentNeedsReset) {
+                this._resetRenderedState();
+                this.contentNeedsReset = false;
+            } else {
+                this._resetGeometryState();
+            }
 
             let result;
             if (layout === 'justified') {
