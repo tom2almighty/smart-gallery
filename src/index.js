@@ -92,6 +92,7 @@ class SmartGallery {
 
         this._items = [];
         this._nextItemId = 1;
+        this.contentNeedsReset = true;
         this.geometry = []; // Calculated layout positions {left, top, width, height, itemIndex}
         this.renderedIndices = new Set(); // Track rendered items for virtualization
         this.mountedItemElements = new Map();
@@ -226,6 +227,7 @@ class SmartGallery {
     setItems(items) {
         this._assertActive();
         this._items = this._normalizeItems(items);
+        this.contentNeedsReset = true;
         this.render();
         return this;
     }
@@ -234,6 +236,7 @@ class SmartGallery {
         this._assertActive();
         const existingIds = new Set(this._items.map(item => item.id));
         this._items = [...this._items, ...this._normalizeItems(items, existingIds)];
+        this.contentNeedsReset = true;
         this.render();
         return this;
     }
@@ -246,6 +249,7 @@ class SmartGallery {
             ...this._items.slice(0, index),
             ...this._items.slice(index + 1)
         ];
+        this.contentNeedsReset = true;
         this.render();
         return true;
     }
@@ -253,6 +257,7 @@ class SmartGallery {
     clear() {
         this._assertActive();
         this._items = [];
+        this.contentNeedsReset = true;
         this.render();
         return this;
     }
@@ -264,6 +269,11 @@ class SmartGallery {
         }
         const previousClassName = this._options.className;
         const nextOptions = normalizeOptions({ ...this._options, ...options });
+        if (nextOptions.itemClassName !== this._options.itemClassName
+            || nextOptions.renderItem !== this._options.renderItem
+            || nextOptions.placeholderColor !== this._options.placeholderColor) {
+            this.contentNeedsReset = true;
+        }
 
         if (previousClassName !== nextOptions.className) {
             if (previousClassName && !this.hadCustomClass) {
@@ -309,7 +319,12 @@ class SmartGallery {
             throw new Error('SmartGallery: 实例已销毁，不能继续渲染。');
         }
         if (this._items.length === 0) {
-            this._resetRenderedState();
+            if (this.contentNeedsReset) {
+                this._resetRenderedState();
+                this.contentNeedsReset = false;
+            } else {
+                this._resetGeometryState();
+            }
             this.container.style.height = '0px';
             return;
         }
@@ -341,6 +356,7 @@ class SmartGallery {
             this.geometry = result.boxes.map((box, i) => ({ ...box, itemIndex: i })); // Store index
             containerHeight = result.containerHeight;
             this._buildVisibleIndex();
+            this._updateMountedGeometry();
 
             this.container.style.height = `${containerHeight}px`;
 
@@ -354,13 +370,29 @@ class SmartGallery {
     _resetRenderedState() {
         this.renderedIndices.clear();
         this.mountedItemElements.clear();
+        this._resetGeometryState();
+        this.container.replaceChildren();
+    }
+
+    _resetGeometryState() {
         this.topSortedGeometryIndices = [];
         this.topSortedStarts = [];
         this.maxGeometryHeight = 0;
         this.currentVisibleStartPos = -1;
         this.currentVisibleEndPos = -1;
         this.geometry = [];
-        this.container.replaceChildren();
+    }
+
+    _updateMountedGeometry() {
+        for (const [index, element] of this.mountedItemElements) {
+            const box = this.geometry[index];
+            if (!box || box.itemIndex !== index) {
+                this._unmountItem(index);
+                this.renderedIndices.delete(index);
+                continue;
+            }
+            this._applyBoxStyles(element, box);
+        }
     }
 
     _buildVisibleIndex() {
@@ -490,6 +522,17 @@ class SmartGallery {
         if (nextStart === -1) {
             this._unmountRangeByPos(prevStart, prevEnd);
         } else if (prevStart === -1) {
+            const nextIndices = new Set();
+            for (let pos = nextStart; pos <= nextEnd; pos++) {
+                const geometryIndex = this.topSortedGeometryIndices[pos];
+                nextIndices.add(this.geometry[geometryIndex].itemIndex);
+            }
+            for (const index of this.renderedIndices) {
+                if (!nextIndices.has(index)) {
+                    this._unmountItem(index);
+                    this.renderedIndices.delete(index);
+                }
+            }
             this._mountRangeByPos(nextStart, nextEnd);
         } else {
             if (nextStart < prevStart) {
@@ -516,11 +559,7 @@ class SmartGallery {
         const div = document.createElement('div');
         div.className = this._options.itemClassName;
         div.dataset.sgId = String(itemData.id);
-        div.style.position = 'absolute';
-        div.style.left = `${box.left}px`;
-        div.style.top = `${box.top}px`;
-        div.style.width = `${box.width}px`;
-        div.style.height = `${box.height}px`;
+        this._applyBoxStyles(div, box);
 
         // Render content
         if (this._options.renderItem) {
@@ -562,6 +601,14 @@ class SmartGallery {
 
         parentNode.appendChild(div);
         this.mountedItemElements.set(index, div);
+    }
+
+    _applyBoxStyles(element, box) {
+        element.style.position = 'absolute';
+        element.style.left = `${box.left}px`;
+        element.style.top = `${box.top}px`;
+        element.style.width = `${box.width}px`;
+        element.style.height = `${box.height}px`;
     }
 
     _unmountItem(index) {
