@@ -17,10 +17,13 @@
 	},
 	"license": "GPL-3.0-only",
 	"author": "tom2almighty",
+	"packageManager": "pnpm@11.6.0",
+	"engines": {
+		"node": ">=20"
+	},
 	"type": "module",
 	"main": "./dist/smart-gallery.cjs",
 	"module": "./dist/smart-gallery.esm.js",
-	"browser": "./dist/smart-gallery.umd.js",
 	"types": "./index.d.ts",
 	"exports": {
 		".": {
@@ -40,7 +43,9 @@
 	],
 	"scripts": {
 		"build": "rollup -c",
-		"test": "node --test"
+		"test": "node --test",
+		"check": "pnpm test && pnpm build",
+		"prepack": "pnpm build"
 	},
 	"devDependencies": {
 		"@rollup/plugin-terser": "^0.4.4",

@@ -104,10 +104,37 @@ const gallery = new SmartGallery("#gallery", {
 
 ## Build
 
-To build the minified version:
+Install dependencies and build the minified bundles:
 
 ```bash
-npm run build
-# or
+pnpm install
 pnpm run build
 ```
+
+The generated files are written to `dist/`. Build artifacts are not committed to
+the repository; `pnpm pack` and `npm publish` run the build automatically.
+
+To run the local demo after building, open `index.html` in a browser.
+
+## Development
+
+Run the tests and production build before submitting changes:
+
+```bash
+pnpm check
+```
+
+## Release
+
+Add an npm access token with publish permission as the `NPM_TOKEN` repository
+secret before the first release. Then create and push a tag that matches the
+package version with a `v` prefix:
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+The publish workflow verifies the tag, rebuilds and tests the package, publishes
+it to npm with provenance, and creates the corresponding GitHub Release with
+generated release notes.
