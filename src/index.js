@@ -196,8 +196,8 @@ class SmartGallery {
             throw new TypeError('SmartGallery: items 必须是数组。');
         }
 
-        const seenIds = new Set(existingIds);
-        return items.map((item, index) => {
+        const reservedIds = new Set(existingIds);
+        for (const [index, item] of items.entries()) {
             if (!item || typeof item !== 'object' || Array.isArray(item)) {
                 throw new TypeError(`SmartGallery: items[${index}] 必须是对象。`);
             }
@@ -206,18 +206,27 @@ class SmartGallery {
                 throw new TypeError(`SmartGallery: 默认渲染要求 items[${index}].src 是非空字符串。`);
             }
 
+            const id = item.id;
+            if (id !== undefined && id !== null) {
+                if (typeof id !== 'string' && typeof id !== 'number') {
+                    throw new TypeError(`SmartGallery: items[${index}].id 必须是字符串或数字。`);
+                }
+                if (reservedIds.has(id)) {
+                    throw new TypeError(`SmartGallery: 图片 id "${id}" 重复。`);
+                }
+                reservedIds.add(id);
+            }
+        }
+
+        let nextItemId = this._nextItemId;
+        const normalizedItems = items.map(item => {
             let id = item.id;
             if (id === undefined || id === null) {
                 do {
-                    id = `sg-${this._nextItemId++}`;
-                } while (seenIds.has(id));
-            } else if (typeof id !== 'string' && typeof id !== 'number') {
-                throw new TypeError(`SmartGallery: items[${index}].id 必须是字符串或数字。`);
+                    id = `sg-${nextItemId++}`;
+                } while (reservedIds.has(id));
+                reservedIds.add(id);
             }
-            if (seenIds.has(id)) {
-                throw new TypeError(`SmartGallery: 图片 id "${id}" 重复。`);
-            }
-            seenIds.add(id);
 
             let aspectRatio = Number(item.aspectRatio);
             if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
@@ -234,6 +243,8 @@ class SmartGallery {
 
             return { ...item, id, aspectRatio };
         });
+        this._nextItemId = nextItemId;
+        return normalizedItems;
     }
 
     _assertActive() {

@@ -159,3 +159,23 @@ test('默认渲染拒绝缺少 src 和重复 id 的数据', () => {
     );
     first.destroy();
 });
+
+test('自动 id 避开显式 id，且校验失败时不消耗序号', () => {
+    const gallery = new SmartGallery(container, { virtualize: false });
+
+    assert.throws(
+        () => gallery.setItems([
+            { src: 'a.jpg', aspectRatio: 1 },
+            { aspectRatio: 1 }
+        ]),
+        /src/
+    );
+
+    gallery.setItems([
+        { src: 'auto.jpg', aspectRatio: 1 },
+        { id: 'sg-1', src: 'explicit.jpg', aspectRatio: 1 }
+    ]);
+
+    assert.deepEqual(gallery.getItems().map(item => item.id), ['sg-2', 'sg-1']);
+    gallery.destroy();
+});
