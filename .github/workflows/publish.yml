@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: npm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -20,11 +21,11 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22.13'
-          cache: pnpm
+          node-version: '24'
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -35,12 +36,16 @@ jobs:
       - name: Validate release version
         run: test "v$(node -p "require('./package.json').version")" = "${{ github.ref_name }}"
 
+      - name: Pack package
+        id: package
+        run: |
+          PACKAGE_FILE=$(npm pack --silent)
+          echo "file=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Publish package
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "${{ steps.package.outputs.file }}" --access public
 
       - name: Create GitHub Release
-        run: gh release create "${{ github.ref_name }}" --generate-notes --verify-tag
+        run: gh release create "${{ github.ref_name }}" "${{ steps.package.outputs.file }}" --generate-notes --verify-tag
         env:
           GH_TOKEN: ${{ github.token }}

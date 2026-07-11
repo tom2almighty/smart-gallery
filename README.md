@@ -126,15 +126,32 @@ pnpm check
 
 ## Release
 
-Add an npm access token with publish permission as the `NPM_TOKEN` repository
-secret before the first release. Then create and push a tag that matches the
-package version with a `v` prefix:
+Publishing uses npm Trusted Publishing with GitHub Actions OIDC. The trusted
+publisher must target this repository, the `publish.yml` workflow, and the `npm`
+GitHub Environment; no npm access token is required.
+
+Update `package.json` to a version that has not been published, then commit the
+version change:
 
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+pnpm version patch --no-git-tag-version
+pnpm check
+git add package.json
+git commit -m "chore(release): 发布 2.0.1"
+git push origin main
+```
+
+Use `minor` or `major` instead of `patch` when required. After the main branch CI
+passes, create and push a tag that matches the new package version with a `v`
+prefix:
+
+```bash
+git tag -a v2.0.1 -m "发布 v2.0.1"
+git push origin v2.0.1
 ```
 
 The publish workflow verifies the tag, rebuilds and tests the package, publishes
-it to npm with provenance, and creates the corresponding GitHub Release with
-generated release notes.
+the generated npm archive through Trusted Publishing with automatic provenance,
+and creates the corresponding GitHub Release with generated release notes. The
+same `.tgz` archive is attached to the GitHub Release and contains the generated
+`dist/` bundles; build artifacts remain excluded from Git.
